@@ -12,7 +12,7 @@ mkdir -p "$MODULE_DIR"
 while true; do
     clear
     echo "=============================="
-    echo "      VPS 工具箱 主面板"
+    echo "      VPS工具箱 By Bai"
     echo "=============================="
     echo "1) 查看系统信息"
     echo "2) 系统备份/还原"
