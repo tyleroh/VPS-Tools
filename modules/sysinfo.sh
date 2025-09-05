@@ -1,0 +1,10 @@
+#!/bin/bash
+echo "📊 系统信息如下："
+echo "------------------------------"
+echo "CPU: $(lscpu | grep 'Model name' | sed 's/Model name:\s*//')"
+echo "内存: $(free -h | awk '/Mem/ {print $2}')"
+echo "已用内存: $(free -h | awk '/Mem/ {print $3}')"
+echo "磁盘用量: $(df -h / | awk 'NR==2 {print $3 "/" $2 " (" $5 ")"}')"
+echo "Docker 容器数量: $(docker ps -q | wc -l)"
+echo "------------------------------"
+read -n 1 -s -r -p "按任意键返回菜单"
