@@ -1,5 +1,5 @@
 #!/bin/bash
-# VPS工具箱 - 系统备份/还原模块
+# VPS工具箱 - 系统备份/还原模块（简洁进度版）
 # By Bai
 
 INSTALL_DIR="/opt/vps-tools"
@@ -9,7 +9,7 @@ LOG_FILE="$LOG_DIR/backup.log"
 
 mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 
-# 文件分类，后续增加直接在这里添加
+# 文件分类
 declare -A FILE_GROUPS=(
     ["docker"]="/opt/compose"
     ["nezha"]="/opt/nezha/dashboard"
@@ -20,18 +20,13 @@ declare -A FILE_GROUPS=(
 
 pause() { read -n1 -s -r -p "按任意键返回..."; }
 
-# 日志记录函数
 log() {
     local msg="[$(date '+%Y-%m-%d %H:%M:%S')] $*"
     echo "$msg" | tee -a "$LOG_FILE"
 }
 
-# 获取所有正在运行的容器
-list_containers() {
-    docker ps --format '{{.Names}}'
-}
+list_containers() { docker ps --format '{{.Names}}'; }
 
-# 停用指定容器
 stop_containers() {
     local containers=("$@")
     local stopped=()
@@ -44,7 +39,6 @@ stop_containers() {
     echo "${stopped[@]}"
 }
 
-# 启动指定容器
 start_containers() {
     local containers=("$@")
     for c in "${containers[@]}"; do
@@ -52,7 +46,6 @@ start_containers() {
     done
 }
 
-# 系统备份
 do_backup() {
     echo "正在列出运行中的 Docker 容器..."
     mapfile -t containers < <(list_containers)
@@ -61,10 +54,7 @@ do_backup() {
     if [[ ${#containers[@]} -gt 0 ]]; then
         echo "可选择停用的容器（空格分隔，多选）："
         i=1
-        for c in "${containers[@]}"; do
-            echo " $i) $c"
-            i=$((i+1))
-        done
+        for c in "${containers[@]}"; do echo " $i) $c"; i=$((i+1)); done
         read -p "请输入序号: " sel
         sel_idx=($sel)
         for idx in "${sel_idx[@]}"; do
@@ -81,46 +71,53 @@ do_backup() {
     TIMESTAMP=$(date +%Y%m%d_%H%M%S)
     BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
     log "=== 开始备份 ==="
-    log "备份文件: $BACKUP_FILE"
-
-    tar -czvf "$BACKUP_FILE" \
+    log "备份目录："
+    for key in "${!FILE_GROUPS[@]}"; do
+        echo " - ${FILE_GROUPS[$key]}"
+    done
+    tar -czf "$BACKUP_FILE" \
         "${FILE_GROUPS["docker"]}" \
         "${FILE_GROUPS["nezha"]}" \
         "${FILE_GROUPS["ssl"]}" \
         ${FILE_GROUPS["ufw"]} \
-        ${FILE_GROUPS["xpanel"]} 2>&1 | tee -a "$LOG_FILE"
+        ${FILE_GROUPS["xpanel"]}
 
-    # 保留最新10个备份
-    cd "$BACKUP_DIR"
-    ls -1t backup_*.tar.gz | tail -n +11 | xargs -r rm -f
+    log "备份完成: $BACKUP_FILE"
 
-    log "=== 备份完成 ==="
-    [[ ${#to_stop[@]} -gt 0 ]] && start_containers "${to_stop[@]}"
+    restarted=""
+    if [[ ${#to_stop[@]} -gt 0 ]]; then
+        start_containers "${to_stop[@]}"
+        restarted="已恢复启动容器: ${to_stop[*]}"
+    fi
+    [[ -n "$restarted" ]] && log "$restarted"
+
     pause
 }
 
-# 系统还原
 do_restore() {
-    echo "可用的备份文件："
-    mapfile -t backups < <(ls -1t "$BACKUP_DIR"/backup_*.tar.gz "$BACKUP_DIR"/backup_*.zip 2>/dev/null)
-    if [[ ${#backups[@]} -eq 0 ]]; then
-        echo "没有找到备份文件！"
-        pause
-        return
-    fi
-
-    i=1
-    for f in "${backups[@]}"; do
-        echo " $i) $(basename "$f")"
-        i=$((i+1))
+    # 强制选择备份文件
+    while true; do
+        echo "可用的备份文件："
+        mapfile -t backups < <(ls -1t "$BACKUP_DIR"/backup_*.tar.gz "$BACKUP_DIR"/backup_*.zip 2>/dev/null)
+        if [[ ${#backups[@]} -eq 0 ]]; then
+            echo "没有找到备份文件！"
+            pause
+            return
+        fi
+        i=1
+        for f in "${backups[@]}"; do
+            echo " $i) $(basename "$f")"
+            i=$((i+1))
+        done
+        read -p "请输入要还原的备份文件序号: " idx
+        [[ -n "$idx" && "$idx" -ge 1 && "$idx" -le ${#backups[@]} ]] && break
+        echo "⚠️ 请输入有效序号！"
     done
-    read -p "请输入要还原的备份文件序号: " idx
     restore_file="${backups[$((idx-1))]}"
-    [[ ! -f "$restore_file" ]] && echo "选择无效！" && return
     log "=== 开始还原 ==="
     log "选择备份文件: $(basename "$restore_file")"
 
-    echo "正在列出运行中的 Docker 容器..."
+    # Docker 停用选择
     mapfile -t containers < <(list_containers)
     containers+=("all")
     to_stop=()
@@ -140,14 +137,11 @@ do_restore() {
     fi
     [[ ${#to_stop[@]} -gt 0 ]] && log "停用容器: ${to_stop[*]}" && stop_containers "${to_stop[@]}"
 
-    # 还原文件选择
+    # 选择还原分类
     echo "可还原分类："
     i=1
     keys=("${!FILE_GROUPS[@]}")
-    for k in "${keys[@]}"; do
-        echo " $i) $k"
-        i=$((i+1))
-    done
+    for k in "${keys[@]}"; do echo " $i) $k"; i=$((i+1)); done
     echo " all) 全部"
     read -p "请输入要还原的分类序号(空格分隔): " sel
     restore_choice=($sel)
@@ -160,24 +154,30 @@ do_restore() {
         unzip -q "$restore_file" -d "$TMPDIR"
     fi
 
+    log "还原目录："
     if [[ " ${restore_choice[*]} " =~ " all " ]]; then
+        for key in "${!FILE_GROUPS[@]}"; do echo " - ${FILE_GROUPS[$key]}"; done
         cp -r "$TMPDIR"/* /
     else
         for idx in "${restore_choice[@]}"; do
             idx=$((idx-1))
-            k="${keys[$idx]}"
-            for path in ${FILE_GROUPS[$k]}; do
+            key="${keys[$idx]}"
+            echo " - ${FILE_GROUPS[$key]}"
+            for path in ${FILE_GROUPS[$key]}; do
                 cp -r "$TMPDIR$path" "$path"
             done
         done
     fi
     rm -rf "$TMPDIR"
-    log "=== 还原完成 ==="
+    log "还原完成"
 
+    restarted=""
     if [[ ${#to_stop[@]} -gt 0 ]]; then
         read -p "是否重启刚才停用的容器？(y/n): " yn
-        [[ "$yn" == "y" ]] && start_containers "${to_stop[@]}" && log "重启容器: ${to_stop[*]}"
+        [[ "$yn" == "y" ]] && start_containers "${to_stop[@]}" && restarted="已恢复启动容器: ${to_stop[*]}"
     fi
+    [[ -n "$restarted" ]] && log "$restarted"
+
     pause
 }
 
