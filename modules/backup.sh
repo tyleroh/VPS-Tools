@@ -61,18 +61,17 @@ while true; do
 
             echo "[开始备份...]"
             echo "[备份目录列表]:"
+            tar_paths=""
             for m in "${MODULES[@]}"; do
                 dirs=$(echo $m | cut -d: -f2)
                 for dir in $dirs; do
                     echo " $dir"
+                    tar_paths+="$dir "
                 done
             done
 
-            # 打包时统一使用相对路径，避免绝对路径问题
-            cd /
-            tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2 | sed 's|^/||') "; done)
-            cd - >/dev/null
-
+            # 使用绝对路径备份
+            tar -czPf "$BACKUP_FILE" $tar_paths
             echo "✅ 备份完成: $BACKUP_FILE"
 
             # 恢复被停用的容器
@@ -168,20 +167,8 @@ while true; do
                 echo " $dir"
             done
 
-            # 使用临时目录解压，保证只覆盖选择的分类
-            TMP_DIR=$(mktemp -d)
-            tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
-            for dir in "${restore_dirs[@]}"; do
-                # 去掉开头的 /
-                rel_dir=$(echo "$dir" | sed 's|^/||')
-                if [ -d "$TMP_DIR/$rel_dir" ] || [ -f "$TMP_DIR/$rel_dir" ]; then
-                    rsync -a "$TMP_DIR/$rel_dir/" "$dir/" 2>/dev/null
-                    echo "已还原: $dir"
-                else
-                    echo "⚠️ 备份包中没有找到: $dir"
-                fi
-            done
-            rm -rf "$TMP_DIR"
+            # 使用绝对路径还原
+            tar -xzPf "$BACKUP_FILE" $(for d in "${restore_dirs[@]}"; do echo -n "$d "; done)
 
             # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
