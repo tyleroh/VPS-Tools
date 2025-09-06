@@ -17,7 +17,7 @@ mkdir -p "$BACKUP_DIR"
 validate_choice() {
     local input="$1"
     local max="$2"
-    local allow_all="$3"  # 如果允许全选，传 "yes"
+    local allow_all="$3"
     local result=()
     for i in $input; do
         if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -ge 1 ] && [ "$i" -le "$max" ]; then
@@ -224,7 +224,7 @@ while true; do
 
                 if [ -d "$match" ]; then
                     mkdir -p "$dir"
-                    rsync -a "$match/" "$dir/"
+                    cp -rp "$match/." "$dir/"
                     echo "已还原目录: $dir"
                     ((success_count++))
                 elif [ -f "$match" ]; then
