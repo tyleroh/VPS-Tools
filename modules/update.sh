@@ -1,32 +1,38 @@
 #!/bin/bash
-# VPS工具箱 - 更新工具箱脚本
-# By Bai
-
+# 更新工具箱模块 - 保留 backup 文件夹
 INSTALL_DIR="/opt/vps-tools"
-REPO_URL="https://github.com/tyleroh/VPS-Tools.git"
-LOG_FILE="$INSTALL_DIR/logs/update.log"
+MODULE_DIR="$INSTALL_DIR/modules"
+REPO="tyleroh/VPS-Tools"
 
-mkdir -p "$INSTALL_DIR/logs"
+echo "=============================="
+echo "🔄 正在更新 VPS 工具箱..."
+echo "=============================="
 
-echo "🔄 开始更新工具箱..."
-cd "$INSTALL_DIR" || { echo "❌ 找不到目录 $INSTALL_DIR"; exit 1; }
+cd "$INSTALL_DIR" || exit
 
-# 如果未初始化 git，则初始化
-if [ ! -d ".git" ]; then
-    git init
-    git remote add origin "$REPO_URL"
-    git branch -M main
+# 如果是 Git 安装
+if [ -d ".git" ]; then
+    git fetch --all
+    git reset --hard origin/main
+else
+    # 非 Git 安装，覆盖下载主面板和模块
+    TMP_DIR=$(mktemp -d)
+    curl -sSL "https://raw.githubusercontent.com/$REPO/main/vps_main.sh" -o "$TMP_DIR/vps_main.sh"
+    chmod +x "$TMP_DIR/vps_main.sh"
+    mv "$TMP_DIR/vps_main.sh" "$INSTALL_DIR/vps_main.sh"
+
+    mkdir -p "$TMP_DIR/modules"
+    module_files=$(curl -sSL "https://api.github.com/repos/$REPO/contents/modules" | grep '"name":' | cut -d '"' -f4)
+    for file in $module_files; do
+        curl -sSL "https://raw.githubusercontent.com/$REPO/main/modules/$file" -o "$TMP_DIR/modules/$file"
+        chmod +x "$TMP_DIR/modules/$file"
+    done
+
+    for f in "$TMP_DIR/modules"/*; do
+        mv "$f" "$MODULE_DIR/"
+    done
+    rm -rf "$TMP_DIR"
 fi
 
-# 放弃本地修改
-git reset --hard
-
-# 拉取远程最新版本
-git pull origin main
-
-# 给主面板和模块赋可执行权限
-chmod +x "$INSTALL_DIR/vps_main.sh"
-chmod +x "$INSTALL_DIR/modules/"*.sh
-chmod +x "$INSTALL_DIR/scripts/"*.sh 2>/dev/null
-
-echo "✅ 工具箱更新完成！详细日志：$LOG_FILE"
+echo "✅ 更新完成，backup 文件夹已保留"
+read -n1 -s -r -p "按任意键返回主菜单..."
