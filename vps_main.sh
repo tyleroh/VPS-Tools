@@ -10,12 +10,16 @@ mkdir -p "$MODULE_DIR" "$BACKUP_DIR"
 
 # 获取 CPU 使用率函数
 get_cpu_percent() {
-    prev_idle=$(awk '{print $5+$6+$7}' /proc/stat | head -1)
-    prev_total=$(awk '{sum=0; for(i=2;i<=NF;i++) sum+=$i; print sum}' /proc/stat | head -1)
-    sleep 0.5
-    idle=$(awk '{print $5+$6+$7}' /proc/stat | head -1)
-    total=$(awk '{sum=0; for(i=2;i<=NF;i++) sum+=$i; print sum}' /proc/stat | head -1)
-    cpu=$(awk "BEGIN{printf \"%.1f\", 100-($idle-$prev_idle)/($total-$prev_total)*100}")
+    cpu_prev=($(awk '/^cpu /{for(i=2;i<=NF;i++) printf "%s ", $i; print ""}' /proc/stat))
+    idle_prev=${cpu_prev[3]}
+    total_prev=0
+    for v in "${cpu_prev[@]}"; do total_prev=$((total_prev + v)); done
+    sleep 1
+    cpu_now=($(awk '/^cpu /{for(i=2;i<=NF;i++) printf "%s ", $i; print ""}' /proc/stat))
+    idle_now=${cpu_now[3]}
+    total_now=0
+    for v in "${cpu_now[@]}"; do total_now=$((total_now + v)); done
+    cpu=$(awk "BEGIN{printf \"%.1f\", 100-($idle_now-$idle_prev)/($total_now-$total_prev)*100}")
     echo "$cpu"
 }
 
