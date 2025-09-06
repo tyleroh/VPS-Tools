@@ -17,6 +17,7 @@ mkdir -p "$BACKUP_DIR"
 validate_choice() {
     local input="$1"
     local max="$2"
+    local allow_all="$3"  # 如果允许全选，传 "yes"
     local result=()
     for i in $input; do
         if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -ge 1 ] && [ "$i" -le "$max" ]; then
@@ -24,6 +25,9 @@ validate_choice() {
             if [[ ! " ${result[@]} " =~ " $i " ]]; then
                 result+=("$i")
             fi
+        elif [[ "$allow_all" == "yes" ]] && [[ "$i" == "a" || "$i" == "all" ]]; then
+            echo "all"
+            return
         fi
     done
     echo "${result[@]}"
@@ -54,17 +58,18 @@ while true; do
                     printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
                 done
                 echo " a) all"
+                
                 read -rp "请输入序号(空格分隔, Enter跳过): " docker_choice
-
                 if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+                    valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}" "yes")
+                    if [[ "$valid_indices" == "all" ]]; then
                         stop_list=("${containers[@]}")
-                    else
-                        # 使用校验函数去重
-                        valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}")
+                    elif [[ -n "$valid_indices" ]]; then
                         for idx in $valid_indices; do
                             stop_list+=("${containers[$((idx-1))]}")
                         done
+                    else
+                        echo "⚠️ 无效输入，未停用任何容器"
                     fi
                     for c in "${stop_list[@]}"; do
                         docker stop "$c" >/dev/null 2>&1
@@ -114,15 +119,20 @@ while true; do
             for i in "${!backup_files[@]}"; do
                 printf " %d) %s\n" "$((i+1))" "${backup_files[$i]}"
             done
-            read -rp "请输入要还原的备份文件序号 (0返回主菜单): " bidx
-            [[ "$bidx" == "0" ]] && continue
 
-            if ! [[ "$bidx" =~ ^[0-9]+$ ]] || [ "$bidx" -lt 1 ] || [ "$bidx" -gt "${#backup_files[@]}" ]; then
-                echo "⚠️ 请选择有效的备份文件"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-                continue
-            fi
-            BACKUP_FILE="$BACKUP_DIR/${backup_files[$((bidx-1))]}"
+            while true; do
+                read -rp "请输入要还原的备份文件序号 (0返回主菜单): " bidx
+                if [[ "$bidx" == "0" ]]; then
+                    continue 2
+                fi
+                valid_idx=$(validate_choice "$bidx" "${#backup_files[@]}")
+                if [[ -z "$valid_idx" ]]; then
+                    echo "⚠️ 无效序号，请重新输入"
+                else
+                    break
+                fi
+            done
+            BACKUP_FILE="$BACKUP_DIR/${backup_files[$((valid_idx-1))]}"
 
             echo "可还原分类:"
             for i in "${!MODULES[@]}"; do
@@ -130,21 +140,27 @@ while true; do
                 printf " %d) %s\n" "$((i+1))" "$NAME"
             done
             echo " a) 全部"
-            read -rp "请输入要还原的分类序号 (空格分隔, 必须输入): " cat_choice
 
-            if [[ -z "$cat_choice" ]]; then
-                echo "⚠️ 必须指定还原分类"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-                continue
-            fi
+            while true; do
+                read -rp "请输入要还原的分类序号 (空格分隔, 必须输入): " cat_choice
+                if [[ -z "$cat_choice" ]]; then
+                    echo "⚠️ 必须指定还原分类"
+                    continue
+                fi
+                valid_indices=$(validate_choice "$cat_choice" "${#MODULES[@]}" "yes")
+                if [[ -z "$valid_indices" ]]; then
+                    echo "⚠️ 无效输入，请重新输入"
+                else
+                    break
+                fi
+            done
 
             restore_dirs=()
-            if [[ "$cat_choice" == "a" ]]; then
+            if [[ "$valid_indices" == "all" ]]; then
                 for m in "${MODULES[@]}"; do
                     restore_dirs+=("$(echo $m | cut -d: -f2)")
                 done
             else
-                valid_indices=$(validate_choice "$cat_choice" "${#MODULES[@]}")
                 for idx in $valid_indices; do
                     restore_dirs+=("$(echo ${MODULES[$((idx-1))]} | cut -d: -f2)")
                 done
@@ -159,22 +175,31 @@ while true; do
                     printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
                 done
                 echo " a) all"
-                read -rp "请选择停用的容器序号: " docker_choice
 
-                if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
-                        stop_list=("${containers[@]}")
-                    else
-                        valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}")
-                        for idx in $valid_indices; do
-                            stop_list+=("${containers[$((idx-1))]}")
-                        done
+                while true; do
+                    read -rp "请选择停用的容器序号: " docker_choice
+                    if [[ -z "$docker_choice" ]]; then
+                        break
                     fi
-                    for c in "${stop_list[@]}"; do
-                        docker stop "$c" >/dev/null 2>&1
-                        echo "已停用容器: $c"
-                    done
-                fi
+                    valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}" "yes")
+                    if [[ -z "$valid_indices" ]]; then
+                        echo "⚠️ 无效输入，请重新输入"
+                    else
+                        if [[ "$valid_indices" == "all" ]]; then
+                            stop_list=("${containers[@]}")
+                        else
+                            for idx in $valid_indices; do
+                                stop_list+=("${containers[$((idx-1))]}")
+                            done
+                        fi
+                        break
+                    fi
+                done
+
+                for c in "${stop_list[@]}"; do
+                    docker stop "$c" >/dev/null 2>&1
+                    echo "已停用容器: $c"
+                done
             fi
 
             echo "[开始还原分类...]"
