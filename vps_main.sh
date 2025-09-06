@@ -1,17 +1,18 @@
 #!/bin/bash
-# VPS工具箱主面板 - 简洁版
+# VPS工具箱主面板 - 简洁版 + 模块调用
 # By Bai
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-MODULE_DIR="$SCRIPT_DIR/modules"
+INSTALL_DIR="/opt/vps-tools"
+MODULE_DIR="$INSTALL_DIR/modules"
 
-# 获取系统资源使用情况
+mkdir -p "$MODULE_DIR"
+
 get_sysinfo() {
     MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
     MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
     DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
     DISK_USED_PERCENT=$(df -h / | awk 'NR==2 {print $5}')
-    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk -F'id,' '{print 100 - $1}' | awk '{printf "%.1f%%\n",$1}')
+    CPU_USAGE=$(awk -v RS="" '/cpu /{u=$2+$4; t=$2+$4+$5; printf "%.1f%%", u/t*100}' /proc/stat)
 }
 
 while true; do
@@ -32,10 +33,22 @@ while true; do
     read -rp "请输入序号: " choice
 
     case $choice in
-        1) bash "$MODULE_DIR/sysinfo.sh" ;;        # 详细系统信息模块
-        2) bash "$MODULE_DIR/backup.sh" ;;         # 系统备份/还原
-        3) bash "$MODULE_DIR/update.sh" ;;         # 更新工具箱
-        0) exit 0 ;;
-        *) echo "输入错误，请重新选择"; sleep 1 ;;
+        1)
+            [[ -x "$MODULE_DIR/sysinfo.sh" ]] && bash "$MODULE_DIR/sysinfo.sh" || echo "❌ sysinfo模块不存在"
+            ;;
+        2)
+            [[ -x "$MODULE_DIR/backup.sh" ]] && bash "$MODULE_DIR/backup.sh" || echo "❌ backup模块不存在"
+            ;;
+        3)
+            [[ -x "$MODULE_DIR/update.sh" ]] && bash "$MODULE_DIR/update.sh" || echo "❌ update模块不存在"
+            ;;
+        0)
+            echo "退出 VPS 工具箱"
+            exit 0
+            ;;
+        *)
+            echo "⚠️ 无效输入，请重新选择"
+            sleep 1
+            ;;
     esac
 done
