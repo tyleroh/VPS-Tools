@@ -24,8 +24,8 @@ swap_total=$(free -m | awk '/Swap:/ {print $2}')
 swap_used=$(free -m | awk '/Swap:/ {print $3}')
 
 # 磁盘
-disk_used=$(df -h / | awk 'NR==2 {print $3}')
-disk_total=$(df -h / | awk 'NR==2 {print $2}')
+disk_used=$(df -h / | awk 'NR==2 {print $3}' | sed 's/G//; s/M//')
+disk_total=$(df -h / | awk 'NR==2 {print $2}' | sed 's/G//; s/M//')
 disk_percent=$(df -h / | awk 'NR==2 {print $5}')
 
 # 网络流量
@@ -51,11 +51,11 @@ echo "系统版本:     $os_version"
 echo "Linux版本:    $kernel_version"
 echo "CPU架构:      $cpu_arch"
 echo "CPU型号:      $cpu_model"
-echo "物理内存:     ${mem_used}/${mem_total} M (${mem_percent}%)"
-echo "虚拟内存:     ${swap_used}/${swap_total} M"
-echo "硬盘占用:     ${disk_used}/${disk_total} (${disk_percent})"
-echo "总接收:       ${rx_gb} GB"
-echo "总发送:       ${tx_gb} GB"
+echo "物理内存:     ${mem_used}/${mem_total}M (${mem_percent}%)"
+echo "虚拟内存:     ${swap_used}/${swap_total}M"
+echo "硬盘占用:     ${disk_used}G/${disk_total}G (${disk_percent})"
+echo "总接收:       ${rx_gb}G"
+echo "总发送:       ${tx_gb}G"
 echo "系统时间:     ${timezone} $system_time"
 echo "运行时长:     $uptime_info"
 echo "Docker版本:   "
@@ -67,8 +67,8 @@ echo "容器: $docker_count  镜像: $docker_images"
 docker ps -a --format '{{.Names}} {{.Networks}}' | while read line; do
     name=$(echo $line | awk '{print $1}')
     net=$(echo $line | awk '{print $2}')
-    if [[ $net == "bridge" ]]; then
-        ip=$(docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$name")
+    if [[ $net != "host" ]]; then
+        ip=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$name")
         echo "  $name  ($ip)"
     else
         echo "  $name  ($net)"
