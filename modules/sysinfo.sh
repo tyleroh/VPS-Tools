@@ -1,85 +1,87 @@
 #!/bin/bash
-# 系统信息模块 - 自动获取动态信息
-# By Bai
-
-# 基础信息
-HOSTNAME=$(hostname)
-OS_VER=$(lsb_release -d 2>/dev/null | awk -F"\t" '{print $2}' || grep PRETTY_NAME /etc/os-release | cut -d= -f2 | tr -d '"')
-KERNEL_VER=$(uname -r)
-ARCH=$(uname -m)
-CPU_MODEL=$(lscpu | grep 'Model name' | awk -F: '{print $2}' | xargs)
-CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print 100-$8"%"}')
-MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
-MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
-MEM_PERCENT=$(awk "BEGIN {printf \"%.2f\",($MEM_USED/$MEM_TOTAL)*100}")
-VIRT_TOTAL=$(free -m | awk '/Swap:/ {print $2}')
-VIRT_USED=$(free -m | awk '/Swap:/ {print $3}')
-DISK_USAGE=$(df -h / | awk 'NR==2 {print $3"/"$2" ("$5")"}')
-UPTIME=$(uptime -p)
-
-# 网络信息动态获取
-DEFAULT_IF=$(ip route | grep default | awk '{print $5}' | head -1)
-DNS=$(grep ^nameserver /etc/resolv.conf | awk '{print $2}' | head -1)
-IPV4=$(curl -s https://ipinfo.io/ip)
-ISP=$(curl -s https://ipinfo.io/org)
-GEO=$(curl -s https://ipinfo.io/loc)
-TIMEZONE=$(timedatectl | grep "Time zone" | awk '{print $3}')
-
-# 网络算法
-NETWORK_ALGO=$(sysctl net.ipv4.tcp_congestion_control | awk '{print $3}')
-
-# Docker信息
-DOCKER_VER=$(docker --version 2>/dev/null || echo N/A)
-DOCKER_COMPOSE_VER=$(docker compose version 2>/dev/null || echo N/A)
-DOCKER_CONTAINERS=$(docker ps -q | wc -l)
-DOCKER_IMAGES=$(docker images -q | wc -l)
+# 系统信息模块
+INSTALL_DIR="/opt/vps-tools"
 
 clear
-echo "系统信息查询"
-echo "-------------"
-echo "主机名:       $HOSTNAME"
-echo "系统版本:     $OS_VER"
-echo "Linux版本:    $KERNEL_VER"
-echo "-------------"
-echo "CPU架构:      $ARCH"
-echo "CPU型号:      $CPU_MODEL"
-echo "-------------"
-echo "CPU占用:      $CPU_USAGE"
-echo "物理内存:     $MEM_USED/$MEM_TOTAL M (${MEM_PERCENT}%)"
-echo "虚拟内存:     $VIRT_USED/$VIRT_TOTAL M"
-echo "硬盘占用:     $DISK_USAGE"
-echo "-------------"
-echo "总接收:       $(cat /sys/class/net/$DEFAULT_IF/statistics/rx_bytes 2>/dev/null)"
-echo "总发送:       $(cat /sys/class/net/$DEFAULT_IF/statistics/tx_bytes 2>/dev/null)"
-echo "-------------"
-echo "网络算法:     $NETWORK_ALGO"
-echo "-------------"
-echo "运营商:       $ISP"
-echo "IPv4地址:     $IPV4"
-echo "DNS地址:      $DNS"
-echo "地理位置:     $GEO"
-echo "系统时间:     $(date)"
-echo "时区:         $TIMEZONE"
-echo "-------------"
-echo "运行时长:     $UPTIME"
-echo "-------------"
-echo "Docker版本："
-echo "$DOCKER_VER"
-echo "Docker Compose版本："
-echo "$DOCKER_COMPOSE_VER"
-echo "容器: $DOCKER_CONTAINERS  镜像: $DOCKER_IMAGES"
-if [[ $DOCKER_CONTAINERS -gt 0 ]]; then
-    echo "容器信息:"
-    for name in $(docker ps --format '{{.Names}}' | sort -u); do
-        network=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$name")
-        network_mode=$(docker inspect -f '{{.HostConfig.NetworkMode}}' "$name")
-        if [[ "$network_mode" == "host" ]]; then
-            echo "  $name  (host)"
-        else
-            echo "  $name  ($network)"
-        fi
-    done
-fi
+echo "=============================="
+echo "      系统信息查询"
 echo "------------------------------"
 
-read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
+# 主机名
+HOSTNAME=$(hostname)
+
+# 系统版本
+OS_VERSION=$(awk -F= '/^PRETTY_NAME/{print $2}' /etc/os-release | tr -d '"')
+
+# Linux内核
+KERNEL=$(uname -r)
+
+# CPU架构和型号
+ARCH=$(uname -m)
+CPU_MODEL=$(awk -F: '/model name/{print $2; exit}' /proc/cpuinfo | sed 's/^[ \t]*//')
+
+# CPU占用
+CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print 100-$8"%"}')
+
+# 内存
+MEM_TOTAL=$(free -m | awk '/Mem:/{print $2}')
+MEM_USED=$(free -m | awk '/Mem:/{print $3}')
+MEM_PERCENT=$(awk "BEGIN {printf \"%.2f\", $MEM_USED/$MEM_TOTAL*100}")
+
+# 虚拟内存
+SWAP_TOTAL=$(free -m | awk '/Swap:/{print $2}')
+SWAP_USED=$(free -m | awk '/Swap:/{print $3}')
+
+# 磁盘
+DISK_TOTAL=$(df -h / | awk 'NR==2{print $2}')
+DISK_USED=$(df -h / | awk 'NR==2{print $3}')
+DISK_PERCENT=$(df -h / | awk 'NR==2{print $5}')
+
+# 网络流量
+RX_BYTES=$(cat /sys/class/net/*/statistics/rx_bytes | awk '{sum+=$1} END {printf "%.2f", sum/1024/1024/1024}')
+TX_BYTES=$(cat /sys/class/net/*/statistics/tx_bytes | awk '{sum+=$1} END {printf "%.2f", sum/1024/1024/1024}')
+
+# 时区和时间
+TIMEZONE=$(timedatectl | grep "Time zone" | awk '{print $3}')
+SYS_TIME=$(date +"%Y-%m-%d %I:%M %p")
+
+# 运行时长
+UPTIME_STR=$(awk '{printf "%d天 %d时 %d分\n",$1/86400,$1%86400/3600,$1%3600/60}' /proc/uptime)
+
+# Docker信息
+DOCKER_VER=$(docker version --format '{{.Server.Version}}, build {{.Server.Build}}' 2>/dev/null)
+DOCKER_COMPOSE_VER=$(docker compose version 2>/dev/null)
+
+CONTAINER_INFO=""
+if command -v docker &>/dev/null && [ "$(docker ps -q)" ]; then
+    mapfile -t containers < <(docker ps --format "{{.Names}} {{.Networks}}")
+    for c in "${containers[@]}"; do
+        name=$(echo "$c" | awk '{print $1}')
+        net=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' "$name")
+        if [ -z "$net" ]; then
+            net="host"
+        fi
+        CONTAINER_INFO+="  $name  ($net)\n"
+    done
+fi
+
+# 输出
+printf "主机名:       %s\n" "$HOSTNAME"
+printf "系统版本:     %s\n" "$OS_VERSION"\n
+printf "Linux版本:    %s\n" "$KERNEL"\n
+printf "CPU架构:      %s\n" "$ARCH"
+printf "CPU型号:      %s\n" "$CPU_MODEL"\n
+printf "CPU占用:      %s\n" "$CPU_USAGE"
+printf "物理内存:     %s/%s Mi (%.2f%%)\n" "$MEM_USED" "$MEM_TOTAL" "$MEM_PERCENT"
+printf "虚拟内存:     %s/%s Mi\n" "$SWAP_USED" "$SWAP_TOTAL"
+printf "硬盘占用:     %s/%s (%s)\n" "$DISK_USED" "$DISK_TOTAL" "$DISK_PERCENT"
+printf "总接收:       %.2f GB\n" "$RX_BYTES"
+printf "总发送:       %.2f GB\n" "$TX_BYTES"
+printf "系统时间:     %s %s\n" "$TIMEZONE" "$SYS_TIME"
+printf "运行时长:     %s\n" "$UPTIME_STR"
+printf "Docker版本:   %s\n" "$DOCKER_VER"
+printf "Docker Compose版本:   %s\n" "$DOCKER_COMPOSE_VER"
+printf "容器信息:\n%s" "$CONTAINER_INFO"
+
+echo "------------------------------"
+read -n1 -s -r -p "按任意键返回主菜单..."
