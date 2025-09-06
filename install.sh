@@ -1,38 +1,31 @@
 #!/bin/bash
-set -e
-
+# VPS工具箱安装脚本
 INSTALL_DIR="/opt/vps-tools"
+MODULE_DIR="$INSTALL_DIR/modules"
+BACKUP_DIR="$INSTALL_DIR/backup"
 REPO="tyleroh/VPS-Tools"
 
-echo "📦 正在安装 VPS工具箱 到 $INSTALL_DIR"
+echo "🧹 正在清理旧版本..."
+rm -rf "$INSTALL_DIR"
 
-# 1. 安装 git
-if ! command -v git &>/dev/null; then
-    echo "🔧 未检测到 git，正在安装..."
-    if [ -f /etc/debian_version ]; then
-        sudo apt update && sudo apt install -y git
-    elif [ -f /etc/redhat-release ]; then
-        sudo yum install -y git
-    else
-        echo "❌ 暂不支持的系统，请手动安装 git 后再试"
-        exit 1
-    fi
-fi
+echo "📦 正在安装 VPS 工具箱到 $INSTALL_DIR..."
+mkdir -p "$MODULE_DIR" "$BACKUP_DIR"
 
-# 2. 拉取/更新仓库
-if [ ! -d "$INSTALL_DIR" ]; then
-    sudo git clone https://github.com/$REPO.git "$INSTALL_DIR"
-else
-    cd "$INSTALL_DIR"
-    sudo git pull
-fi
+# 下载主面板
+curl -sSL "https://raw.githubusercontent.com/$REPO/main/vps_main.sh" -o "$INSTALL_DIR/vps_main.sh"
 
-# 3. 设置权限
-sudo chmod +x "$INSTALL_DIR/vps_main.sh"
-sudo chmod +x "$INSTALL_DIR/modules"/*.sh || true
+# 下载模块
+for module in sysinfo.sh backup.sh update.sh; do
+    echo "📄 下载模块: $module"
+    curl -sSL "https://raw.githubusercontent.com/$REPO/main/modules/$module" -o "$MODULE_DIR/$module"
+done
 
-# 4. 创建快捷命令
-sudo ln -sf "$INSTALL_DIR/vps_main.sh" /usr/local/bin/vtool
+# 设置权限
+chmod +x "$INSTALL_DIR/vps_main.sh"
+chmod +x "$MODULE_DIR"/*.sh
 
-echo "✅ 安装完成！"
-echo "👉 输入 vtool 即可启动 VPS 工具箱面板"
+# 创建全局快捷命令
+ln -sf "$INSTALL_DIR/vps_main.sh" /usr/local/bin/vtool
+chmod +x /usr/local/bin/vtool
+
+echo "✅ 安装完成！使用 'vtool' 启动主面板。"
