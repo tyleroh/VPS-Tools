@@ -163,7 +163,7 @@ while true; do
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
-                echo "可选择停用的 Docker 容器（Enter跳过, 0返回上级）"
+                echo "可选择停用的 Docker 容器（Enter跳过, 0返回主菜单）"
                 for i in "${!containers[@]}"; do
                     printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
                 done
@@ -171,7 +171,7 @@ while true; do
 
                 while true; do
                     read -rp "请选择停用的容器序号: " docker_choice
-                    [[ "$docker_choice" == "0" ]] && break
+                    [[ "$docker_choice" == "0" ]] && continue 2  # <-- 改这里，输入0直接返回主菜单
                     if [[ -z "$docker_choice" ]]; then
                         break
                     fi
