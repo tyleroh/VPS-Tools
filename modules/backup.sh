@@ -29,6 +29,7 @@ while true; do
             # 系统备份
             # -------------------
             mapfile -t containers < <(docker ps --format "{{.Names}}")
+            stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
                 echo "可选择停用的 Docker 容器:"
                 for i in "${!containers[@]}"; do
@@ -37,7 +38,6 @@ while true; do
                 echo " a) all"
                 read -rp "请输入序号(空格分隔, Enter跳过): " docker_choice
 
-                stop_list=()
                 if [[ -n "$docker_choice" ]]; then
                     if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
                         stop_list=("${containers[@]}")
@@ -49,6 +49,7 @@ while true; do
 
                     for c in "${stop_list[@]}"; do
                         docker stop "$c" >/dev/null 2>&1
+                        echo "已停用容器: $c"
                     done
                 fi
             fi
@@ -56,13 +57,15 @@ while true; do
             TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
             BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
             echo "[开始备份...]"
-            tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2) "; done)
-
-            if [ ${#stop_list[@]} -gt 0 ]; then
-                for c in "${stop_list[@]}"; do
-                    docker start "$c" >/dev/null 2>&1
+            echo "[备份目录列表]:"
+            for m in "${MODULES[@]}"; do
+                dirs=$(echo $m | cut -d: -f2)
+                for dir in $dirs; do
+                    echo " $dir"
                 done
-            fi
+            done
+
+            tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2) "; done)
 
             echo "✅ 备份完成: $BACKUP_FILE"
             [ ${#stop_list[@]} -gt 0 ] && echo "已恢复容器: ${stop_list[*]}"
@@ -99,10 +102,17 @@ while true; do
                 printf " %d) %s\n" "$((i+1))" "$NAME"
             done
             echo " a) 全部"
-            read -rp "请输入要还原的分类序号 (空格分隔, Enter默认全部): " cat_choice
+            read -rp "请输入要还原的分类序号 (空格分隔, 必须输入): " cat_choice
+
+            # 必须选择
+            if [[ -z "$cat_choice" ]]; then
+                echo "⚠️ 必须指定还原分类"
+                read -n1 -s -r -p "按任意键返回主菜单..."
+                continue
+            fi
 
             restore_dirs=()
-            if [[ -z "$cat_choice" || "$cat_choice" == "a" ]]; then
+            if [[ "$cat_choice" == "a" ]]; then
                 for m in "${MODULES[@]}"; do
                     restore_dirs+=("$(echo $m | cut -d: -f2)")
                 done
@@ -112,7 +122,7 @@ while true; do
                 done
             fi
 
-            # Docker 停用可选
+            # 停用 Docker 可选
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
@@ -134,6 +144,7 @@ while true; do
 
                     for c in "${stop_list[@]}"; do
                         docker stop "$c" >/dev/null 2>&1
+                        echo "已停用容器: $c"
                     done
                 fi
             fi
@@ -145,19 +156,23 @@ while true; do
 
             # 解压备份
             if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
-                tar -xzf "$BACKUP_FILE" -C / --overwrite
+                for dir in "${restore_dirs[@]}"; do
+                    tar -xzf "$BACKUP_FILE" -C / --overwrite "$dir"
+                done
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
-                unzip -o "$BACKUP_FILE" -d /
+                for dir in "${restore_dirs[@]}"; do
+                    unzip -o "$BACKUP_FILE" -d / "$dir"
+                done
             fi
 
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
+                    echo "已启用容器: $c"
                 done
             fi
 
             echo "✅ 还原完成"
-            [ ${#stop_list[@]} -gt 0 ] && echo "已启用容器: ${stop_list[*]}"
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         *)
