@@ -2,47 +2,58 @@
 # 系统信息模块
 
 clear
-HOSTNAME=$(hostname)
-OS_VERSION=$(lsb_release -ds 2>/dev/null || cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '"')
-KERNEL_VERSION=$(uname -r)
-ARCH=$(uname -m)
-CPU_MODEL=$(lscpu | awk -F: '/Model name/ {print $2}' | sed 's/^ *//')
-CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk '{print 100 - $8}')
-CPU_USAGE=$(printf "%.1f" $CPU_USAGE)
-MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
-MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
-MEM_PERCENT=$(awk "BEGIN {printf \"%.1f\", $MEM_USED/$MEM_TOTAL*100}")
-SWAP_USED=$(free -m | awk '/Swap:/ {print $3}')
-SWAP_TOTAL=$(free -m | awk '/Swap:/ {print $2}')
-DISK_INFO=$(df -h / | awk 'NR==2 {printf "%s/%s (%s)", $3,$2,$5}')
-RX_BYTES=$(cat /sys/class/net/$(ip route get 1 | awk '{print $5}')/statistics/rx_bytes)
-TX_BYTES=$(cat /sys/class/net/$(ip route get 1 | awk '{print $5}')/statistics/tx_bytes)
-RX_GB=$(awk "BEGIN {printf \"%.2f\", $RX_BYTES/1024/1024/1024}")
-TX_GB=$(awk "BEGIN {printf \"%.2f\", $TX_BYTES/1024/1024/1024}")
-TIMEZONE=$(date +'%Z %Y-%m-%d %I:%M %p')
-UPTIME=$(awk '{printf "%d天 %d时 %d分", $1/86400,$1%86400/3600,$1%3600/60}' /proc/uptime)
+echo "=============================="
+echo "        系统信息"
+echo "=============================="
 
-echo "📊 系统信息如下："
-echo "------------------------------"
-echo "主机名:       $HOSTNAME"
-echo "系统版本:     $OS_VERSION"
-echo "Linux版本:    $KERNEL_VERSION"
-echo "------------------------------"
-echo "CPU架构:      $ARCH"
-echo "CPU型号:      $CPU_MODEL"
-echo "------------------------------"
-echo "CPU占用:      $CPU_USAGE%"
-echo "物理内存:     ${MEM_USED}/${MEM_TOTAL} Mi (${MEM_PERCENT}%)"
-echo "虚拟内存:     ${SWAP_USED}/${SWAP_TOTAL} Mi"
-echo "硬盘占用:     $DISK_INFO"
-echo "------------------------------"
-echo "总接收:       ${RX_GB} GB"
-echo "总发送:       ${TX_GB} GB"
-echo "------------------------------"
-echo "系统时间:     $TIMEZONE"
-echo "运行时长:     $UPTIME"
-echo "------------------------------"
-docker -v &>/dev/null && echo "Docker版本: $(docker -v)"; docker compose version &>/dev/null && echo "Docker Compose版本: $(docker compose version)"
-docker ps --format "  {{.Names}}  ({{.Networks}})"
-echo "------------------------------"
+hostname=$(hostname)
+os_version=$(lsb_release -d 2>/dev/null | awk -F"\t" '{print $2}')
+[[ -z "$os_version" ]] && os_version=$(cat /etc/os-release | grep PRETTY_NAME | cut -d= -f2 | tr -d '"')
+kernel_version=$(uname -r)
+cpu_arch=$(uname -m)
+cpu_model=$(lscpu | grep "Model name" | awk -F: '{print $2}' | sed 's/^ //')
+
+mem_total=$(free -m | awk '/Mem:/ {print $2}')
+mem_used=$(free -m | awk '/Mem:/ {print $3}')
+mem_percent=$(awk "BEGIN{printf \"%.1f\", $mem_used/$mem_total*100}")
+
+swap_total=$(free -m | awk '/Swap:/ {print $2}')
+swap_used=$(free -m | awk '/Swap:/ {print $3}')
+
+disk_used=$(df -h / | awk 'NR==2 {print $3}')
+disk_total=$(df -h / | awk 'NR==2 {print $2}')
+disk_percent=$(df -h / | awk 'NR==2 {print $5}')
+
+rx_bytes=$(cat /sys/class/net/$(ip route show default | awk '/default/ {print $5}')/statistics/rx_bytes)
+tx_bytes=$(cat /sys/class/net/$(ip route show default | awk '/default/ {print $5}')/statistics/tx_bytes)
+rx_gb=$(awk "BEGIN{printf \"%.2f\", $rx_bytes/1024/1024/1024}")
+tx_gb=$(awk "BEGIN{printf \"%.2f\", $tx_bytes/1024/1024/1024}")
+
+timezone=$(timedatectl | grep "Time zone" | awk '{print $3}')
+system_time=$(date "+%Y-%m-%d %I:%M %p")
+uptime_info=$(uptime -p | sed 's/up //')
+
+docker_version=$(docker version --format 'Docker version {{.Server.Version}}, build {{.Server.BuildID}}' 2>/dev/null)
+docker_compose=$(docker compose version 2>/dev/null)
+docker_count=$(docker ps -a --format '{{.Names}}' | wc -l)
+docker_images=$(docker images -q | wc -l)
+
+echo "主机名:       $hostname"
+echo "系统版本:     $os_version"
+echo "Linux版本:    $kernel_version"
+echo "CPU架构:      $cpu_arch"
+echo "CPU型号:      $cpu_model"
+echo "物理内存:     ${mem_used}/${mem_total} Mi (${mem_percent}%)"
+echo "虚拟内存:     ${swap_used}/${swap_total} Mi"
+echo "硬盘占用:     ${disk_used}/${disk_total} (${disk_percent})"
+echo "总接收:       ${rx_gb} GB"
+echo "总发送:       ${tx_gb} GB"
+echo "系统时间:     ${timezone} $system_time"
+echo "运行时长:     $uptime_info"
+echo "Docker版本:   $docker_version"
+echo "Docker Compose版本: $docker_compose"
+echo "容器: $docker_count  镜像: $docker_images"
+
+docker ps -a --format '  {{.Names}}  ({{.Networks}})' | sed 's/, /, /g'
+
 read -n1 -s -r -p "按任意键返回主菜单..."
