@@ -198,7 +198,7 @@ while true; do
                 done
             fi
 
-            echo "[开始还原分类...]"
+            # ------------------- 解压还原 -------------------
             TMP_DIR=$(mktemp -d)
             success_count=0
 
@@ -206,32 +206,31 @@ while true; do
                 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
                 unzip -oq "$BACKUP_FILE" -d "$TMP_DIR"
+                # 修正 zip 中可能带的绝对路径
+                find "$TMP_DIR" -mindepth 1 -exec bash -c '
+                    for f; do
+                        rel="${f#"$TMP_DIR"/}"
+                        mv "$f" "$TMP_DIR/$rel" 2>/dev/null || true
+                    done
+                ' bash {} +
             fi
 
             for dir in "${restore_dirs[@]}"; do
                 rel_path=$(echo "$dir" | sed 's|^/||')
-                matches=($(find "$TMP_DIR" -path "*/$rel_path" 2>/dev/null))
+                src_path="$TMP_DIR/$rel_path"
 
-                if [ ${#matches[@]} -eq 0 ]; then
-                    echo "⚠️ 备份包中没有找到: $dir"
-                    continue
-                elif [ ${#matches[@]} -gt 1 ]; then
-                    echo "⚠️ 存在多个候选路径，优先选择最匹配的: ${matches[0]}"
-                    match="${matches[0]}"
-                else
-                    match="${matches[0]}"
-                fi
-
-                if [ -d "$match" ]; then
+                if [ -d "$src_path" ]; then
                     mkdir -p "$dir"
-                    cp -rp "$match/." "$dir/"
+                    cp -rp "$src_path/." "$dir/"
                     echo "已还原目录: $dir"
                     ((success_count++))
-                elif [ -f "$match" ]; then
+                elif [ -f "$src_path" ]; then
                     mkdir -p "$(dirname "$dir")"
-                    cp -f "$match" "$dir"
+                    cp -f "$src_path" "$dir"
                     echo "已还原文件: $dir"
                     ((success_count++))
+                else
+                    echo "⚠️ 备份包中没有找到: $dir"
                 fi
             done
 
