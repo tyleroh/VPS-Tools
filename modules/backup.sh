@@ -41,7 +41,7 @@ while true; do
                 read -rp "请输入序号(空格分隔, Enter跳过): " docker_choice
 
                 if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+                    if [[ "$docker_choice" == "a" || "$docker_choice" == "all" ]]; then
                         stop_list=("${containers[@]}")
                     else
                         for idx in $docker_choice; do
@@ -70,11 +70,9 @@ while true; do
                 done
             done
 
-            # 使用绝对路径备份
             tar -czPf "$BACKUP_FILE" $tar_paths
             echo "✅ 备份完成: $BACKUP_FILE"
 
-            # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
@@ -146,7 +144,7 @@ while true; do
                 read -rp "请选择停用的容器序号: " docker_choice
 
                 if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+                    if [[ "$docker_choice" == "a" || "$docker_choice" == "all" ]]; then
                         stop_list=("${containers[@]}")
                     else
                         for idx in $docker_choice; do
@@ -162,55 +160,42 @@ while true; do
             fi
 
             echo "[开始还原分类...]"
-            for dir in "${restore_dirs[@]}"; do
-                echo " $dir"
-            done
-
+            restore_success=0
             TMP_DIR=$(mktemp -d)
-            success_count=0
 
-            # 解压备份
             if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
-                if ! tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" 2>/dev/null; then
-                    echo "❌ 解压备份失败，可能文件损坏"
-                    rm -rf "$TMP_DIR"
-                    read -n1 -s -r -p "按任意键返回主菜单..."
-                    continue
-                fi
+                tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
-                if ! unzip -q "$BACKUP_FILE" -d "$TMP_DIR"; then
-                    echo "❌ 解压备份失败，可能文件损坏"
-                    rm -rf "$TMP_DIR"
-                    read -n1 -s -r -p "按任意键返回主菜单..."
-                    continue
-                fi
-            else
-                echo "❌ 不支持的备份文件格式"
-                rm -rf "$TMP_DIR"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-                continue
+                unzip -q "$BACKUP_FILE" -d "$TMP_DIR"
             fi
 
             for dir in "${restore_dirs[@]}"; do
+                # 去掉开头 /
                 rel_dir=$(echo "$dir" | sed 's|^/||')
-                if [ -d "$TMP_DIR/$rel_dir" ] || [ -f "$TMP_DIR/$rel_dir" ]; then
-                    mkdir -p "$dir"
-                    rsync -a "$TMP_DIR/$rel_dir/" "$dir/" 2>/dev/null
-                    echo "✅ 已还原: $dir"
-                    success_count=$((success_count+1))
-                else
+                # 尝试匹配压缩包内实际路径
+                found=0
+                for src in $(find "$TMP_DIR" -type d -name "$(basename $rel_dir)" -o -type f -name "$(basename $rel_dir)"); do
+                    if [[ -e "$src" ]]; then
+                        target_dir="$dir"
+                        mkdir -p "$target_dir"
+                        rsync -a "$src"/ "$target_dir"/ 2>/dev/null
+                        echo "已还原: $dir"
+                        restore_success=1
+                        found=1
+                        break
+                    fi
+                done
+                if [ $found -eq 0 ]; then
                     echo "⚠️ 备份包中没有找到: $dir"
                 fi
             done
+
             rm -rf "$TMP_DIR"
 
-            if [ $success_count -eq 0 ]; then
+            if [ $restore_success -eq 0 ]; then
                 echo "❌ 还原失败，未成功恢复任何目录"
-            else
-                echo "✅ 还原完成，共恢复 $success_count 个目录"
             fi
 
-            # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
@@ -218,6 +203,7 @@ while true; do
                 done
             fi
 
+            [ $restore_success -eq 1 ] && echo "✅ 还原完成"
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         *)
