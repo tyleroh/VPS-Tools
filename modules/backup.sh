@@ -21,7 +21,6 @@ validate_choice() {
     local result=()
     for i in $input; do
         if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -ge 1 ] && [ "$i" -le "$max" ]; then
-            # 去重：如果 result 中还没有这个值就加入
             if [[ ! " ${result[@]} " =~ " $i " ]]; then
                 result+=("$i")
             fi
@@ -47,9 +46,7 @@ while true; do
     case $choice in
         0) break ;;
         1)
-            # -------------------
-            # 系统备份
-            # -------------------
+            # ------------------- 系统备份 -------------------
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
@@ -58,8 +55,9 @@ while true; do
                     printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
                 done
                 echo " a) all"
-                
-                read -rp "请输入序号(空格分隔, Enter跳过): " docker_choice
+
+                read -rp "请输入序号(空格分隔, Enter跳过, 0返回主菜单): " docker_choice
+                [[ "$docker_choice" == "0" ]] && continue
                 if [[ -n "$docker_choice" ]]; then
                     valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}" "yes")
                     if [[ "$valid_indices" == "all" ]]; then
@@ -105,9 +103,7 @@ while true; do
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         2)
-            # -------------------
-            # 系统还原
-            # -------------------
+            # ------------------- 系统还原 -------------------
             mapfile -t backup_files < <(ls -1t "$BACKUP_DIR" | grep -E '\.tar\.gz|\.zip')
             if [ ${#backup_files[@]} -eq 0 ]; then
                 echo "⚠️ 没有备份文件"
@@ -122,9 +118,7 @@ while true; do
 
             while true; do
                 read -rp "请输入要还原的备份文件序号 (0返回主菜单): " bidx
-                if [[ "$bidx" == "0" ]]; then
-                    continue 2
-                fi
+                [[ "$bidx" == "0" ]] && continue 2
                 valid_idx=$(validate_choice "$bidx" "${#backup_files[@]}")
                 if [[ -z "$valid_idx" ]]; then
                     echo "⚠️ 无效序号，请重新输入"
@@ -142,7 +136,8 @@ while true; do
             echo " a) 全部"
 
             while true; do
-                read -rp "请输入要还原的分类序号 (空格分隔, 必须输入): " cat_choice
+                read -rp "请输入要还原的分类序号 (空格分隔, 必须输入, 0返回主菜单): " cat_choice
+                [[ "$cat_choice" == "0" ]] && continue 2
                 if [[ -z "$cat_choice" ]]; then
                     echo "⚠️ 必须指定还原分类"
                     continue
@@ -166,11 +161,11 @@ while true; do
                 done
             fi
 
-            # Docker 停用
+            # ------------------- Docker 停用选择 -------------------
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
-                echo "可选择停用的 Docker 容器（Enter跳过）"
+                echo "可选择停用的 Docker 容器（Enter跳过, 0返回上级）"
                 for i in "${!containers[@]}"; do
                     printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
                 done
@@ -178,6 +173,7 @@ while true; do
 
                 while true; do
                     read -rp "请选择停用的容器序号: " docker_choice
+                    [[ "$docker_choice" == "0" ]] && break
                     if [[ -z "$docker_choice" ]]; then
                         break
                     fi
