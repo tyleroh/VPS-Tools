@@ -1,160 +1,182 @@
 #!/bin/bash
-# 系统备份/还原模块 - 最终版
-# By Bai
+# 系统备份/还原模块
+INSTALL_DIR="/opt/vps-tools"
+BACKUP_DIR="$INSTALL_DIR/backup"
 
-BACKUP_DIR="/opt/vps-tools/backup"
-mkdir -p "$BACKUP_DIR"
+MODULES=(
+"docker:/opt/compose"
+"nezha:/opt/nezha/dashboard"
+"ssl:/root/cert"
+"ufw:/etc/ufw/applications.d/custom"
+"xpanel:/etc/x-ui/x-ui.db /usr/local/x-ui/bin/config.json"
+)
 
-while true; do
-    clear
-    echo "系统备份/还原模块"
-    echo "=============================="
-    echo "1) 系统备份"
-    echo "2) 系统还原"
-    echo "0) 返回主菜单"
-    echo "=============================="
-    read -rp "请输入序号: " choice
+clear
+echo "=============================="
+echo "   系统备份/还原模块"
+echo "=============================="
+echo "1) 系统备份"
+echo "2) 系统还原"
+echo "0) 返回主菜单"
+echo "=============================="
+read -rp "请输入序号: " choice
 
-    case $choice in
-        0) break ;;
-        1)
-            # 获取可停用容器
-            mapfile -t containers < <(docker ps --format '{{.Names}}' | sort -u)
-            containers+=("all")
-            echo "可停用的 Docker 容器:"
-            for i in "${!containers[@]}"; do
-                echo " $((i+1))) ${containers[i]}"
-            done
-            read -rp "请输入序号(空格分隔, 0返回主菜单): " docker_choice
-            [[ "$docker_choice" == "0" ]] && continue
+case $choice in
+    0) return ;;
+    1)
+        # -------------------
+        # 系统备份
+        # -------------------
+        # 获取正在运行的容器
+        mapfile -t containers < <(docker ps --format "{{.Names}}")
+        echo "可选择停用的 Docker 容器:"
+        for i in "${!containers[@]}"; do
+            printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
+        done
+        echo " a) all"
+        read -rp "请输入序号(空格分隔, 0返回主菜单): " docker_choice
 
-            stop_list=()
+        [[ "$docker_choice" == "0" ]] && return
+
+        stop_list=()
+        if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+            stop_list=("${containers[@]}")
+        else
             for idx in $docker_choice; do
-                [[ $idx -le ${#containers[@]} ]] && stop_list+=("${containers[$((idx-1))]}")
+                stop_list+=("${containers[$((idx-1))]}")
             done
-            [[ ${#stop_list[@]} -gt 0 ]] && echo "停用容器: ${stop_list[*]}"
+        fi
 
-            # 停用容器
+        # 停用选中容器
+        if [ ${#stop_list[@]} -gt 0 ]; then
+            echo "停用容器: ${stop_list[*]}"
             for c in "${stop_list[@]}"; do
-                [[ "$c" != "all" ]] && docker stop "$c" &>/dev/null
+                docker stop "$c" >/dev/null 2>&1
             done
-            [[ " ${stop_list[*]} " =~ "all" ]] && docker stop $(docker ps -q) &>/dev/null
+        fi
 
-            # 开始备份
-            echo "开始备份..."
-            echo "备份目录:"
-            echo " docker目录"
-            echo " 哪吒监控"
-            echo " SSL证书"
-            echo " ufw防火自定义规则"
-            echo " XPanel配置文件"
+        # 备份
+        TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
+        BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
+        echo "[开始备份...]"
+        echo "[备份目录]"
+        for m in "${MODULES[@]}"; do
+            DIRS=$(echo "$m" | cut -d: -f2)
+            echo " $DIRS"
+        done
+        tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2) "; done)
 
-            backup_file="$BACKUP_DIR/backup_$(date +%Y%m%d_%H%M%S).tar.gz"
-            tar -czf "$backup_file" \
-                /opt/compose \
-                /opt/nezha/dashboard \
-                /root/cert \
-                /etc/ufw/applications.d/custom \
-                /etc/x-ui/x-ui.db \
-                /usr/local/x-ui/bin/config.json &>/dev/null
-
-            echo "✅ 备份完成: $backup_file"
-
-            # 启动容器
+        # 恢复 Docker
+        if [ ${#stop_list[@]} -gt 0 ]; then
             for c in "${stop_list[@]}"; do
-                [[ "$c" != "all" ]] && docker start "$c" &>/dev/null
+                docker start "$c" >/dev/null 2>&1
             done
-            [[ " ${stop_list[*]} " =~ "all" ]] && docker start $(docker ps -aq) &>/dev/null
-            [[ ${#stop_list[@]} -gt 0 ]] && echo "已恢复容器: ${stop_list[*]}"
+        fi
 
-            read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
-            ;;
-        2)
-            # 系统还原
-            files=($(ls -1t "$BACKUP_DIR"/backup_*.tar.gz "$BACKUP_DIR"/backup_*.zip 2>/dev/null))
-            if [[ ${#files[@]} -eq 0 ]]; then
-                echo "没有备份文件"
-                read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
-                continue
-            fi
+        echo "✅ 备份完成: $BACKUP_FILE"
+        if [ ${#stop_list[@]} -gt 0 ]; then
+            echo "已恢复容器: ${stop_list[*]}"
+        fi
+        read -n1 -s -r -p "按任意键返回主菜单..."
+        ;;
+    2)
+        # -------------------
+        # 系统还原
+        # -------------------
+        mapfile -t backup_files < <(ls -1t "$BACKUP_DIR" | grep -E '\.tar\.gz|\.zip')
+        if [ ${#backup_files[@]} -eq 0 ]; then
+            echo "⚠️ 没有备份文件"
+            read -n1 -s -r -p "按任意键返回主菜单..."
+            return
+        fi
 
-            echo "可用的备份文件:"
-            for i in "${!files[@]}"; do
-                echo " $((i+1))) $(basename "${files[i]}")"
+        echo "可用的备份文件:"
+        for i in "${!backup_files[@]}"; do
+            printf " %d) %s\n" "$((i+1))" "${backup_files[$i]}"
+        done
+        read -rp "请输入要还原的备份文件序号 (0返回主菜单): " bidx
+        [[ "$bidx" == "0" ]] && return
+
+        if ! [[ "$bidx" =~ ^[0-9]+$ ]] || [ "$bidx" -lt 1 ] || [ "$bidx" -gt "${#backup_files[@]}" ]; then
+            echo "⚠️ 请选择有效的备份文件"
+            read -n1 -s -r -p "按任意键返回主菜单..."
+            return
+        fi
+
+        BACKUP_FILE="$BACKUP_DIR/${backup_files[$((bidx-1))]}"
+
+        # 选择还原分类
+        echo "可还原分类:"
+        for i in "${!MODULES[@]}"; do
+            NAME=$(echo "${MODULES[$i]}" | cut -d: -f1)
+            printf " %d) %s\n" "$((i+1))" "$NAME"
+        done
+        echo " a) 全部"
+        read -rp "请输入要还原的分类序号 (空格分隔, 0返回主菜单): " cat_choice
+        [[ "$cat_choice" == "0" ]] && return
+
+        restore_dirs=()
+        if [[ "$cat_choice" == *"a"* ]]; then
+            for m in "${MODULES[@]}"; do
+                restore_dirs+=("$(echo $m | cut -d: -f2)")
             done
-            read -rp "请输入要还原的备份文件序号 (0返回主菜单): " restore_choice
-            [[ "$restore_choice" == "0" ]] && continue
-            if ! [[ "$restore_choice" =~ ^[0-9]+$ ]] || (( restore_choice < 1 || restore_choice > ${#files[@]} )); then
-                echo "请输入有效序号！"
-                read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
-                continue
-            fi
-            backup_file="${files[$((restore_choice-1))]}"
-
-            echo "可还原分类:"
-            echo " 1) nezha"
-            echo " 2) xpanel"
-            echo " 3) ufw"
-            echo " 4) ssl"
-            echo " 5) docker"
-            echo " a) 全部"
-            read -rp "请输入要还原的分类序号 (空格分隔, 0返回主菜单): " categories
-            [[ "$categories" == "0" ]] && continue
-            if [[ -z "$categories" ]]; then
-                echo "未选择还原分类"
-                read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
-                continue
-            fi
-
-            # 停用 Docker 容器
-            mapfile -t containers < <(docker ps --format '{{.Names}}' | sort -u)
-            containers+=("all")
-            echo "停用选择的 Docker 容器（如有）"
-            for i in "${!containers[@]}"; do
-                echo " $((i+1))) ${containers[i]}"
+        else
+            for idx in $cat_choice; do
+                restore_dirs+=("$(echo ${MODULES[$((idx-1))]} | cut -d: -f2)")
             done
-            read -rp "请选择停用的容器序号 (空格分隔, 0返回主菜单): " docker_choice
-            [[ "$docker_choice" == "0" ]] && continue
+        fi
 
-            stop_list=()
+        # 停用 Docker
+        mapfile -t containers < <(docker ps --format "{{.Names}}")
+        echo "停用选择的 Docker 容器（如有）"
+        for i in "${!containers[@]}"; do
+            printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
+        done
+        echo " a) all"
+        read -rp "请选择停用的容器序号 (空格分隔, 0返回主菜单): " docker_choice
+        [[ "$docker_choice" == "0" ]] && return
+
+        stop_list=()
+        if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+            stop_list=("${containers[@]}")
+        else
             for idx in $docker_choice; do
-                [[ $idx -le ${#containers[@]} ]] && stop_list+=("${containers[$((idx-1))]}")
+                stop_list+=("${containers[$((idx-1))]}")
             done
-            [[ ${#stop_list[@]} -gt 0 ]] && echo "停用容器: ${stop_list[*]}"
+        fi
+
+        if [ ${#stop_list[@]} -gt 0 ]; then
             for c in "${stop_list[@]}"; do
-                [[ "$c" != "all" ]] && docker stop "$c" &>/dev/null
+                docker stop "$c" >/dev/null 2>&1
             done
-            [[ " ${stop_list[*]} " =~ "all" ]] && docker stop $(docker ps -q) &>/dev/null
+        fi
 
-            # 开始还原
-            echo "开始还原分类..."
-            if [[ "$categories" =~ "a" ]]; then
-                tar -xzf "$backup_file" -C / 2>/dev/null || unzip -o "$backup_file" -d /
-            else
-                for cat in $categories; do
-                    case $cat in
-                        1) tar -xzf "$backup_file" -C / opt/nezha/dashboard 2>/dev/null || unzip -o "$backup_file" -d /opt/nezha/dashboard ;; 
-                        2) tar -xzf "$backup_file" -C / etc/x-ui 2>/dev/null || unzip -o "$backup_file" -d /etc/x-ui ;;
-                        3) tar -xzf "$backup_file" -C / etc/ufw 2>/dev/null || unzip -o "$backup_file" -d /etc/ufw ;;
-                        4) tar -xzf "$backup_file" -C / root 2>/dev/null || unzip -o "$backup_file" -d /root ;;
-                        5) tar -xzf "$backup_file" -C / opt/compose 2>/dev/null || unzip -o "$backup_file" -d /opt/compose ;;
-                    esac
-                done
-            fi
-            echo "✅ 还原完成"
+        # 开始还原
+        echo "[开始还原分类...]"
+        for dir in "${restore_dirs[@]}"; do
+            echo " $dir"
+        done
 
-            # 启动 Docker 容器
+        if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
+            tar -xzf "$BACKUP_FILE" -C /
+        elif [[ "$BACKUP_FILE" == *.zip ]]; then
+            unzip -o "$BACKUP_FILE" -d /
+        fi
+
+        if [ ${#stop_list[@]} -gt 0 ]; then
             for c in "${stop_list[@]}"; do
-                [[ "$c" != "all" ]] && docker start "$c" &>/dev/null
+                docker start "$c" >/dev/null 2>&1
             done
-            [[ " ${stop_list[*]} " =~ "all" ]] && docker start $(docker ps -aq) &>/dev/null
-            [[ ${#stop_list[@]} -gt 0 ]] && echo "已启用容器: ${stop_list[*]}"
+        fi
 
-            read -n1 -s -r -p "按任意键返回主菜单..." </dev/tty
-            ;;
-        *)
-            echo "输入错误，请重新选择"
-            sleep 1
-            ;;
-    esac
-done
+        echo "✅ 还原完成"
+        if [ ${#stop_list[@]} -gt 0 ]; then
+            echo "已启用容器: ${stop_list[*]}"
+        fi
+        read -n1 -s -r -p "按任意键返回主菜单..."
+        ;;
+    *)
+        echo "⚠️ 无效输入"
+        sleep 1
+        ;;
+esac
