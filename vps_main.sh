@@ -29,8 +29,8 @@ while true; do
     echo "磁盘使用：${disk_used}/${disk_total} (${disk_percent})"
 
     # CPU 占用
-    cpu_percent=$(top -bn1 | grep "Cpu(s)" | awk '{print $2+$4}')
-    cpu_percent=$(printf "%.1f" "$cpu_percent")
+    cpu_idle=$(top -bn1 | grep "Cpu(s)" | awk -F'id,' '{print $1}' | awk '{print $NF}')
+    cpu_percent=$(awk "BEGIN{printf \"%.1f\", 100-$cpu_idle}")
     echo "CPU 使用率：${cpu_percent}%"
     echo "------------------------------------------------------------"
 
