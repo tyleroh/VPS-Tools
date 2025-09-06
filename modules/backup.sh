@@ -41,7 +41,7 @@ while true; do
                 read -rp "请输入序号(空格分隔, Enter跳过): " docker_choice
 
                 if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == "a" || "$docker_choice" == "all" ]]; then
+                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
                         stop_list=("${containers[@]}")
                     else
                         for idx in $docker_choice; do
@@ -60,19 +60,21 @@ while true; do
             BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
 
             echo "[开始备份...]"
-            echo "[备份目录列表]:"
+            echo "[备份目录/文件列表]:"
             tar_paths=""
             for m in "${MODULES[@]}"; do
-                dirs=$(echo $m | cut -d: -f2)
-                for dir in $dirs; do
-                    echo " $dir"
-                    tar_paths+="$dir "
+                paths=$(echo "$m" | cut -d: -f2)
+                for p in $paths; do
+                    echo " $p"
+                    tar_paths+="$p "
                 done
             done
 
+            # 使用绝对路径备份
             tar -czPf "$BACKUP_FILE" $tar_paths
             echo "✅ 备份完成: $BACKUP_FILE"
 
+            # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
@@ -124,7 +126,7 @@ while true; do
             restore_dirs=()
             if [[ "$cat_choice" == "a" ]]; then
                 for m in "${MODULES[@]}"; do
-                    restore_dirs+=("$(echo $m | cut -d: -f2)")
+                    restore_dirs+=("$(echo ${m} | cut -d: -f2)")
                 done
             else
                 for idx in $cat_choice; do
@@ -132,7 +134,7 @@ while true; do
                 done
             fi
 
-            # Docker 停用可选
+            # 停用 Docker 容器可选
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
@@ -144,7 +146,7 @@ while true; do
                 read -rp "请选择停用的容器序号: " docker_choice
 
                 if [[ -n "$docker_choice" ]]; then
-                    if [[ "$docker_choice" == "a" || "$docker_choice" == "all" ]]; then
+                    if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
                         stop_list=("${containers[@]}")
                     else
                         for idx in $docker_choice; do
@@ -161,41 +163,41 @@ while true; do
 
             echo "[开始还原分类...]"
             restore_success=0
+
             TMP_DIR=$(mktemp -d)
 
+            # 解压备份到临时目录
             if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
                 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
                 unzip -q "$BACKUP_FILE" -d "$TMP_DIR"
             fi
 
-            for dir in "${restore_dirs[@]}"; do
-                # 去掉开头 /
-                rel_dir=$(echo "$dir" | sed 's|^/||')
-                # 尝试匹配压缩包内实际路径
-                found=0
-                for src in $(find "$TMP_DIR" -type d -name "$(basename $rel_dir)" -o -type f -name "$(basename $rel_dir)"); do
-                    if [[ -e "$src" ]]; then
-                        target_dir="$dir"
-                        mkdir -p "$target_dir"
-                        rsync -a "$src"/ "$target_dir"/ 2>/dev/null
-                        echo "已还原: $dir"
-                        restore_success=1
-                        found=1
-                        break
+            for item in "${restore_dirs[@]}"; do
+                rel_path=$(echo "$item" | sed 's|^/||')
+                src_path="$TMP_DIR/$rel_path"
+
+                if [ -e "$src_path" ]; then
+                    # 自动创建父目录
+                    parent_dir=$(dirname "$item")
+                    mkdir -p "$parent_dir"
+
+                    if [ -d "$src_path" ]; then
+                        mkdir -p "$item"
+                        rsync -a "$src_path"/ "$item"/
+                    else
+                        cp -f "$src_path" "$item"
                     fi
-                done
-                if [ $found -eq 0 ]; then
-                    echo "⚠️ 备份包中没有找到: $dir"
+                    echo "已还原: $item"
+                    restore_success=1
+                else
+                    echo "⚠️ 备份包中没有找到: $item"
                 fi
             done
 
             rm -rf "$TMP_DIR"
 
-            if [ $restore_success -eq 0 ]; then
-                echo "❌ 还原失败，未成功恢复任何目录"
-            fi
-
+            # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
@@ -203,7 +205,12 @@ while true; do
                 done
             fi
 
-            [ $restore_success -eq 1 ] && echo "✅ 还原完成"
+            if [ $restore_success -eq 1 ]; then
+                echo "✅ 还原完成"
+            else
+                echo "❌ 还原失败，未成功恢复任何目录或文件"
+            fi
+
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         *)
