@@ -66,8 +66,6 @@ while true; do
                         for idx in $valid_indices; do
                             stop_list+=("${containers[$((idx-1))]}")
                         done
-                    else
-                        echo "⚠️ 无效输入，未停用任何容器"
                     fi
                     for c in "${stop_list[@]}"; do
                         docker stop "$c" >/dev/null 2>&1
@@ -206,13 +204,15 @@ while true; do
                 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
                 unzip -oq "$BACKUP_FILE" -d "$TMP_DIR"
+
                 # 修正 zip 中可能带的绝对路径
-                find "$TMP_DIR" -mindepth 1 -exec bash -c '
-                    for f; do
-                        rel="${f#"$TMP_DIR"/}"
-                        mv "$f" "$TMP_DIR/$rel" 2>/dev/null || true
-                    done
-                ' bash {} +
+                find "$TMP_DIR" -mindepth 1 | while read -r f; do
+                    rel="${f#$TMP_DIR/}"  # TMP_DIR 内部路径
+                    rel="${rel#/}"         # 去掉开头 /
+                    target="$TMP_DIR/$rel"
+                    mkdir -p "$(dirname "$target")"
+                    mv -T "$f" "$target" 2>/dev/null || true
+                done
             fi
 
             for dir in "${restore_dirs[@]}"; do
