@@ -11,6 +11,8 @@ MODULES=(
 "xpanel:/etc/x-ui/x-ui.db /usr/local/x-ui/bin/config.json"
 )
 
+mkdir -p "$BACKUP_DIR"
+
 while true; do
     clear
     echo "=============================="
@@ -56,6 +58,7 @@ while true; do
 
             TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
             BACKUP_FILE="$BACKUP_DIR/backup_$TIMESTAMP.tar.gz"
+
             echo "[开始备份...]"
             echo "[备份目录列表]:"
             for m in "${MODULES[@]}"; do
@@ -65,10 +68,21 @@ while true; do
                 done
             done
 
-            tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2) "; done)
+            # 打包时统一使用相对路径，避免绝对路径问题
+            cd /
+            tar -czf "$BACKUP_FILE" $(for m in "${MODULES[@]}"; do echo -n "$(echo $m | cut -d: -f2 | sed 's|^/||') "; done)
+            cd - >/dev/null
 
             echo "✅ 备份完成: $BACKUP_FILE"
-            [ ${#stop_list[@]} -gt 0 ] && echo "已恢复容器: ${stop_list[*]}"
+
+            # 恢复被停用的容器
+            if [ ${#stop_list[@]} -gt 0 ]; then
+                for c in "${stop_list[@]}"; do
+                    docker start "$c" >/dev/null 2>&1
+                    echo "已恢复容器: $c"
+                done
+            fi
+
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         2)
@@ -122,7 +136,7 @@ while true; do
                 done
             fi
 
-            # 停用 Docker 可选
+            # Docker 停用可选
             mapfile -t containers < <(docker ps --format "{{.Names}}")
             stop_list=()
             if [ ${#containers[@]} -gt 0 ]; then
@@ -154,17 +168,22 @@ while true; do
                 echo " $dir"
             done
 
-            # 解压备份
-            if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
-                for dir in "${restore_dirs[@]}"; do
-                    tar -xzf "$BACKUP_FILE" -C / --overwrite "$dir"
-                done
-            elif [[ "$BACKUP_FILE" == *.zip ]]; then
-                for dir in "${restore_dirs[@]}"; do
-                    unzip -o "$BACKUP_FILE" -d / "$dir"
-                done
-            fi
+            # 使用临时目录解压，保证只覆盖选择的分类
+            TMP_DIR=$(mktemp -d)
+            tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
+            for dir in "${restore_dirs[@]}"; do
+                # 去掉开头的 /
+                rel_dir=$(echo "$dir" | sed 's|^/||')
+                if [ -d "$TMP_DIR/$rel_dir" ] || [ -f "$TMP_DIR/$rel_dir" ]; then
+                    rsync -a "$TMP_DIR/$rel_dir/" "$dir/" 2>/dev/null
+                    echo "已还原: $dir"
+                else
+                    echo "⚠️ 备份包中没有找到: $dir"
+                fi
+            done
+            rm -rf "$TMP_DIR"
 
+            # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
                 for c in "${stop_list[@]}"; do
                     docker start "$c" >/dev/null 2>&1
