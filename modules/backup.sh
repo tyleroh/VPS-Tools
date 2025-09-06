@@ -29,30 +29,32 @@ case $choice in
         # -------------------
         # 获取正在运行的容器
         mapfile -t containers < <(docker ps --format "{{.Names}}")
-        echo "可选择停用的 Docker 容器:"
-        for i in "${!containers[@]}"; do
-            printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
-        done
-        echo " a) all"
-        read -rp "请输入序号(空格分隔, 0返回主菜单): " docker_choice
-
-        [[ "$docker_choice" == "0" ]] && return
-
-        stop_list=()
-        if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
-            stop_list=("${containers[@]}")
-        else
-            for idx in $docker_choice; do
-                stop_list+=("${containers[$((idx-1))]}")
+        if [ ${#containers[@]} -gt 0 ]; then
+            echo "可选择停用的 Docker 容器:"
+            for i in "${!containers[@]}"; do
+                printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
             done
-        fi
+            echo " a) all"
+            read -rp "请输入序号(空格分隔, 0返回主菜单): " docker_choice
 
-        # 停用选中容器
-        if [ ${#stop_list[@]} -gt 0 ]; then
-            echo "停用容器: ${stop_list[*]}"
-            for c in "${stop_list[@]}"; do
-                docker stop "$c" >/dev/null 2>&1
-            done
+            [[ "$docker_choice" == "0" ]] && return
+
+            stop_list=()
+            if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+                stop_list=("${containers[@]}")
+            else
+                for idx in $docker_choice; do
+                    stop_list+=("${containers[$((idx-1))]}")
+                done
+            fi
+
+            # 停用选中容器
+            if [ ${#stop_list[@]} -gt 0 ]; then
+                echo "停用容器: ${stop_list[*]}"
+                for c in "${stop_list[@]}"; do
+                    docker stop "$c" >/dev/null 2>&1
+                done
+            fi
         fi
 
         # 备份
@@ -71,14 +73,13 @@ case $choice in
             for c in "${stop_list[@]}"; do
                 docker start "$c" >/dev/null 2>&1
             done
+            echo "已恢复容器: ${stop_list[*]}"
         fi
 
         echo "✅ 备份完成: $BACKUP_FILE"
-        if [ ${#stop_list[@]} -gt 0 ]; then
-            echo "已恢复容器: ${stop_list[*]}"
-        fi
         read -n1 -s -r -p "按任意键返回主菜单..."
         ;;
+
     2)
         # -------------------
         # 系统还原
@@ -118,61 +119,68 @@ case $choice in
         restore_dirs=()
         if [[ "$cat_choice" == *"a"* ]]; then
             for m in "${MODULES[@]}"; do
-                restore_dirs+=("$(echo $m | cut -d: -f2)")
+                restore_dirs+=($(echo $m | cut -d: -f2))
             done
         else
             for idx in $cat_choice; do
-                restore_dirs+=("$(echo ${MODULES[$((idx-1))]} | cut -d: -f2)")
+                restore_dirs+=($(echo ${MODULES[$((idx-1))]} | cut -d: -f2))
             done
+        fi
+
+        if [ ${#restore_dirs[@]} -eq 0 ]; then
+            echo "⚠️ 没有选择有效分类"
+            read -n1 -s -r -p "按任意键返回主菜单..."
+            return
         fi
 
         # 停用 Docker
         mapfile -t containers < <(docker ps --format "{{.Names}}")
-        echo "停用选择的 Docker 容器（如有）"
-        for i in "${!containers[@]}"; do
-            printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
-        done
-        echo " a) all"
-        read -rp "请选择停用的容器序号 (空格分隔, 0返回主菜单): " docker_choice
-        [[ "$docker_choice" == "0" ]] && return
-
-        stop_list=()
-        if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
-            stop_list=("${containers[@]}")
-        else
-            for idx in $docker_choice; do
-                stop_list+=("${containers[$((idx-1))]}")
+        if [ ${#containers[@]} -gt 0 ]; then
+            echo "停用选择的 Docker 容器（如有）"
+            for i in "${!containers[@]}"; do
+                printf " %d) %s\n" "$((i+1))" "${containers[$i]}"
             done
+            echo " a) all"
+            read -rp "请选择停用的容器序号 (空格分隔, 0返回主菜单): " docker_choice
+            [[ "$docker_choice" == "0" ]] && return
+
+            stop_list=()
+            if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
+                stop_list=("${containers[@]}")
+            else
+                for idx in $docker_choice; do
+                    stop_list+=("${containers[$((idx-1))]}")
+                done
+            fi
+
+            if [ ${#stop_list[@]} -gt 0 ]; then
+                for c in "${stop_list[@]}"; do
+                    docker stop "$c" >/dev/null 2>&1
+                done
+            fi
         fi
 
-        if [ ${#stop_list[@]} -gt 0 ]; then
-            for c in "${stop_list[@]}"; do
-                docker stop "$c" >/dev/null 2>&1
-            done
-        fi
-
-        # 开始还原
+        # 开始还原（精确解压，只覆盖选中的分类）
         echo "[开始还原分类...]"
         for dir in "${restore_dirs[@]}"; do
             echo " $dir"
         done
 
         if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
-            tar -xzf "$BACKUP_FILE" -C /
+            tar -xzf "$BACKUP_FILE" -C / "${restore_dirs[@]}"
         elif [[ "$BACKUP_FILE" == *.zip ]]; then
-            unzip -o "$BACKUP_FILE" -d /
+            unzip -o "$BACKUP_FILE" "${restore_dirs[@]}" -d /
         fi
 
+        # 恢复容器
         if [ ${#stop_list[@]} -gt 0 ]; then
             for c in "${stop_list[@]}"; do
                 docker start "$c" >/dev/null 2>&1
             done
+            echo "已启用容器: ${stop_list[*]}"
         fi
 
         echo "✅ 还原完成"
-        if [ ${#stop_list[@]} -gt 0 ]; then
-            echo "已启用容器: ${stop_list[*]}"
-        fi
         read -n1 -s -r -p "按任意键返回主菜单..."
         ;;
     *)
