@@ -29,7 +29,8 @@ while true; do
     echo "磁盘使用：${disk_used}/${disk_total} (${disk_percent})"
 
     # CPU 占用
-    cpu_percent=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}')
+    cpu_percent=$(top -bn1 | grep "Cpu(s)" | awk '{print $2+$4}')
+    cpu_percent=$(printf "%.1f" "$cpu_percent")
     echo "CPU 使用率：${cpu_percent}%"
     echo "------------------------------------------------------------"
 
@@ -42,28 +43,13 @@ while true; do
 
     case $choice in
         1)
-            if [[ -x "$MODULE_DIR/sysinfo.sh" ]]; then
-                "$MODULE_DIR/sysinfo.sh"
-            else
-                echo "❌ 系统信息模块不存在或不可执行: $MODULE_DIR/sysinfo.sh"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-            fi
+            [[ -x "$MODULE_DIR/sysinfo.sh" ]] && "$MODULE_DIR/sysinfo.sh"
             ;;
         2)
-            if [[ -x "$MODULE_DIR/backup.sh" ]]; then
-                "$MODULE_DIR/backup.sh"
-            else
-                echo "❌ 系统备份模块不存在或不可执行: $MODULE_DIR/backup.sh"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-            fi
+            [[ -x "$MODULE_DIR/backup.sh" ]] && "$MODULE_DIR/backup.sh"
             ;;
         3)
-            if [[ -x "$MODULE_DIR/update.sh" ]]; then
-                "$MODULE_DIR/update.sh"
-            else
-                echo "❌ 更新模块不存在或不可执行: $MODULE_DIR/update.sh"
-                read -n1 -s -r -p "按任意键返回主菜单..."
-            fi
+            [[ -x "$MODULE_DIR/update.sh" ]] && "$MODULE_DIR/update.sh"
             ;;
         0)
             echo "退出 VPS 工具箱"
