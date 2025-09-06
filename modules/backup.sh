@@ -13,6 +13,22 @@ MODULES=(
 
 mkdir -p "$BACKUP_DIR"
 
+# 输入校验函数，增加去重功能
+validate_choice() {
+    local input="$1"
+    local max="$2"
+    local result=()
+    for i in $input; do
+        if [[ "$i" =~ ^[0-9]+$ ]] && [ "$i" -ge 1 ] && [ "$i" -le "$max" ]; then
+            # 去重：如果 result 中还没有这个值就加入
+            if [[ ! " ${result[@]} " =~ " $i " ]]; then
+                result+=("$i")
+            fi
+        fi
+    done
+    echo "${result[@]}"
+}
+
 while true; do
     clear
     echo "=============================="
@@ -44,7 +60,9 @@ while true; do
                     if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
                         stop_list=("${containers[@]}")
                     else
-                        for idx in $docker_choice; do
+                        # 使用校验函数去重
+                        valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}")
+                        for idx in $valid_indices; do
                             stop_list+=("${containers[$((idx-1))]}")
                         done
                     fi
@@ -126,7 +144,8 @@ while true; do
                     restore_dirs+=("$(echo $m | cut -d: -f2)")
                 done
             else
-                for idx in $cat_choice; do
+                valid_indices=$(validate_choice "$cat_choice" "${#MODULES[@]}")
+                for idx in $valid_indices; do
                     restore_dirs+=("$(echo ${MODULES[$((idx-1))]} | cut -d: -f2)")
                 done
             fi
@@ -146,7 +165,8 @@ while true; do
                     if [[ "$docker_choice" == *"a"* || "$docker_choice" == *"all"* ]]; then
                         stop_list=("${containers[@]}")
                     else
-                        for idx in $docker_choice; do
+                        valid_indices=$(validate_choice "$docker_choice" "${#containers[@]}")
+                        for idx in $valid_indices; do
                             stop_list+=("${containers[$((idx-1))]}")
                         done
                     fi
