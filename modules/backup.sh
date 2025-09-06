@@ -166,7 +166,6 @@ while true; do
 
             TMP_DIR=$(mktemp -d)
 
-            # 解压备份到临时目录
             if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
                 tar -xzf "$BACKUP_FILE" -C "$TMP_DIR"
             elif [[ "$BACKUP_FILE" == *.zip ]]; then
@@ -174,11 +173,15 @@ while true; do
             fi
 
             for item in "${restore_dirs[@]}"; do
-                rel_path=$(echo "$item" | sed 's|^/||')
+                rel_path=$(echo "$item" | sed 's|^/||')  # 去掉开头 /
                 src_path="$TMP_DIR/$rel_path"
 
+                # 如果 zip 里去掉了绝对路径，可以尝试查找相对路径
+                if [ ! -e "$src_path" ]; then
+                    src_path=$(find "$TMP_DIR" -type f -o -type d | grep "/$rel_path$" | head -n1)
+                fi
+
                 if [ -e "$src_path" ]; then
-                    # 自动创建父目录
                     parent_dir=$(dirname "$item")
                     mkdir -p "$parent_dir"
 
