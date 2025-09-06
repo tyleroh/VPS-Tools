@@ -1,61 +1,41 @@
 #!/bin/bash
-# VPS工具箱主面板
+# VPS工具箱主面板 - 简洁版
 # By Bai
 
-INSTALL_DIR="/opt/vps-tools"
-MODULE_DIR="$INSTALL_DIR/modules"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+MODULE_DIR="$SCRIPT_DIR/modules"
 
-# 确保模块目录存在
-mkdir -p "$MODULE_DIR"
+# 获取系统资源使用情况
+get_sysinfo() {
+    MEM_TOTAL=$(free -m | awk '/Mem:/ {print $2}')
+    MEM_USED=$(free -m | awk '/Mem:/ {print $3}')
+    DISK_TOTAL=$(df -h / | awk 'NR==2 {print $2}')
+    DISK_USED_PERCENT=$(df -h / | awk 'NR==2 {print $5}')
+    CPU_USAGE=$(top -bn1 | grep "Cpu(s)" | awk -F'id,' '{print 100 - $1}' | awk '{printf "%.1f%%\n",$1}')
+}
 
-# 主循环
 while true; do
     clear
-    echo "=============================="
-    echo "      VPS工具箱 By Bai"
-    echo "=============================="
+    get_sysinfo
+    echo "------------------------------------------------------------"
+    echo "| VPS 工具箱                     |  By Bai                 |"
+    echo "------------------------------------------------------------"
+    echo "内存使用：已用: ${MEM_USED}Mi / 总: ${MEM_TOTAL}Mi"
+    echo "磁盘使用：${DISK_USED_PERCENT} 已用 / 总: ${DISK_TOTAL}"
+    echo "CPU 使用率：${CPU_USAGE}"
+    echo "------------------------------------------------------------"
     echo "1) 查看系统信息"
     echo "2) 系统备份/还原"
     echo "3) 更新工具箱"
     echo "0) 退出"
-    echo "=============================="
+    echo "------------------------------------------------------------"
     read -rp "请输入序号: " choice
 
     case $choice in
-        1)
-            # 系统信息模块
-            if [[ -x "$MODULE_DIR/sysinfo.sh" ]]; then
-                "$MODULE_DIR/sysinfo.sh"
-            else
-                echo "❌ 系统信息模块不存在或不可执行: $MODULE_DIR/sysinfo.sh"
-            fi
-            read -n1 -s -r -p "按任意键返回主菜单..."
-            ;;
-        2)
-            # 系统备份/还原模块
-            if [[ -x "$MODULE_DIR/backup.sh" ]]; then
-                "$MODULE_DIR/backup.sh"
-            else
-                echo "❌ 系统备份模块不存在或不可执行: $MODULE_DIR/backup.sh"
-            fi
-            read -n1 -s -r -p "按任意键返回主菜单..."
-            ;;
-        3)
-            # 更新工具箱模块
-            if [[ -x "$MODULE_DIR/update.sh" ]]; then
-                "$MODULE_DIR/update.sh"
-            else
-                echo "❌ 更新模块不存在或不可执行: $MODULE_DIR/update.sh"
-            fi
-            read -n1 -s -r -p "按任意键返回主菜单..."
-            ;;
-        0)
-            echo "退出 VPS 工具箱"
-            exit 0
-            ;;
-        *)
-            echo "⚠️ 无效输入，请重新选择"
-            sleep 1
-            ;;
+        1) bash "$MODULE_DIR/sysinfo.sh" ;;        # 详细系统信息模块
+        2) bash "$MODULE_DIR/backup.sh" ;;         # 系统备份/还原
+        3) bash "$MODULE_DIR/update.sh" ;;         # 更新工具箱
+        0) exit 0 ;;
+        *) echo "输入错误，请重新选择"; sleep 1 ;;
     esac
 done
