@@ -117,7 +117,6 @@ while true; do
             echo " a) 全部"
             read -rp "请输入要还原的分类序号 (空格分隔, 必须输入): " cat_choice
 
-            # 必须选择
             if [[ -z "$cat_choice" ]]; then
                 echo "⚠️ 必须指定还原分类"
                 read -n1 -s -r -p "按任意键返回主菜单..."
@@ -167,8 +166,49 @@ while true; do
                 echo " $dir"
             done
 
-            # 使用绝对路径还原
-            tar -xzPf "$BACKUP_FILE" $(for d in "${restore_dirs[@]}"; do echo -n "$d "; done)
+            TMP_DIR=$(mktemp -d)
+            success_count=0
+
+            # 解压备份
+            if [[ "$BACKUP_FILE" == *.tar.gz ]]; then
+                if ! tar -xzf "$BACKUP_FILE" -C "$TMP_DIR" 2>/dev/null; then
+                    echo "❌ 解压备份失败，可能文件损坏"
+                    rm -rf "$TMP_DIR"
+                    read -n1 -s -r -p "按任意键返回主菜单..."
+                    continue
+                fi
+            elif [[ "$BACKUP_FILE" == *.zip ]]; then
+                if ! unzip -q "$BACKUP_FILE" -d "$TMP_DIR"; then
+                    echo "❌ 解压备份失败，可能文件损坏"
+                    rm -rf "$TMP_DIR"
+                    read -n1 -s -r -p "按任意键返回主菜单..."
+                    continue
+                fi
+            else
+                echo "❌ 不支持的备份文件格式"
+                rm -rf "$TMP_DIR"
+                read -n1 -s -r -p "按任意键返回主菜单..."
+                continue
+            fi
+
+            for dir in "${restore_dirs[@]}"; do
+                rel_dir=$(echo "$dir" | sed 's|^/||')
+                if [ -d "$TMP_DIR/$rel_dir" ] || [ -f "$TMP_DIR/$rel_dir" ]; then
+                    mkdir -p "$dir"
+                    rsync -a "$TMP_DIR/$rel_dir/" "$dir/" 2>/dev/null
+                    echo "✅ 已还原: $dir"
+                    success_count=$((success_count+1))
+                else
+                    echo "⚠️ 备份包中没有找到: $dir"
+                fi
+            done
+            rm -rf "$TMP_DIR"
+
+            if [ $success_count -eq 0 ]; then
+                echo "❌ 还原失败，未成功恢复任何目录"
+            else
+                echo "✅ 还原完成，共恢复 $success_count 个目录"
+            fi
 
             # 恢复被停用的容器
             if [ ${#stop_list[@]} -gt 0 ]; then
@@ -178,7 +218,6 @@ while true; do
                 done
             fi
 
-            echo "✅ 还原完成"
             read -n1 -s -r -p "按任意键返回主菜单..."
             ;;
         *)
