@@ -224,7 +224,7 @@ while true; do
                     ((success_count++))
                 elif [ -f "$src_path" ]; then
                     mkdir -p "$(dirname "$dir")"
-                    cp -f "$src_path" "$dir"
+                    cp -fp "$src_path" "$dir"
                     echo "已还原文件: $dir"
                     ((success_count++))
                 else
